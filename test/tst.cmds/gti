@@ -1,0 +1,8 @@
+# vim: ft=sh
+
+help="Runs the gti command"
+
+function run() {
+	must_have gti
+	gti >& /dev/null
+}

@@ -1,0 +1,7 @@
+# vim: ft=sh
+
+help="Prints command usage"
+
+function run() {
+	one-usage "$@"
+}

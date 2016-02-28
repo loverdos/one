@@ -1,0 +1,15 @@
+# vim: ft=sh
+
+help="Prints shell commands for the environment"
+
+function run() {
+	shell=${SHELL##*/}
+	case "$shell" in
+		fish ) echo "set -gx PATH \$PATH $ABSHERE"
+			;;
+		bash ) echo "export PATH=\$PATH:$ABSHERE"
+			;;
+		* ) EXIT_ERROR 4 "I do not know shell $SHELL"
+			;;
+	esac
+}

@@ -1,0 +1,10 @@
+# vim: ft=sh
+
+help="CPL: Echoes the command line"
+
+function run() {
+	level="$1"
+	ME="$2"
+	shift 2
+	echo CPL: I am $ME with $# params $@
+}

@@ -1,0 +1,9 @@
+# vim: ft=sh
+
+help="Level 2 command demo"
+
+function run() {
+	level="$1"
+	cmdpath="$2"
+	one-run-subcmd "$@"
+}

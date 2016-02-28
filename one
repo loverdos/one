@@ -1,0 +1,104 @@
+#!/bin/bash
+
+function name-of() {
+	echo "$(basename "$1")"
+}
+
+function ERROR() {
+	>&2 echo "$@"
+}
+
+function EXIT_ERROR() {
+	CODE=$1
+	shift
+	ERROR "$@"
+	ERROR Exiting with status code $CODE
+	exit $CODE
+}
+
+function must_have() {
+	if ! which "$1" >& /dev/null; then
+		EXIT_ERROR 2 "ERROR: Command $1 not found"
+	fi
+}
+
+function one-subcmd-dir-suffix() {
+	echo '.cmds'
+}
+
+function one-cmd-dir-of() {
+	cmdpath="$1"
+	echo "$cmdpath$(one-subcmd-dir-suffix)"
+}
+
+function one-cmd-of-subcmd() {
+	subcmdpath="$1"
+	subcmdname="$(name-of $subcmdpath)"
+}
+
+function one-subcmds-of() {
+	cmdpath="$1"
+	cmddir=$(one-cmd-dir-of "$cmdpath")
+
+	ls "$cmddir"/* 2> /dev/null
+}
+
+function one-usage-of-subcmd() {
+	level="$1"
+	cmdpath="$2"
+	subcmdpath="$3"
+	subcmdname=$(name-of "$subcmdpath")
+	. "$subcmdpath"
+	echo -n "$level" $subcmdname
+	echo -ne "\t"
+	echo $help
+}
+
+function one-usage-subcmds() {
+	level="$1"
+	cmdpath="$2"
+
+	subcmdpaths="$(one-subcmds-of "$cmdpath")"
+	for subcmdpath in $subcmdpaths; do
+		if [ -f "$subcmdpath" ]; then
+			one-usage-of-subcmd "$level" "$cmdpath" "$subcmdpath"
+		fi
+	done
+}
+
+function one-usage() {
+	level="$1"
+	cmdpath="$2"
+	cmdname="$(name-of "$cmdpath")"
+	ERROR Usage: $cmdname COMMAND
+	one-usage-subcmds "$@"
+	exit 1
+}
+
+function one-run-subcmd() {
+  if [ "$#" = 2 ]; then
+		one-usage "$@"
+	fi
+
+	level="$1"
+  cmdpath="$2"
+	subcmdname="$3"
+	shift 3
+
+	subcmdpath=$(one-cmd-dir-of $cmdpath)/$subcmdname
+	if [ ! -f "$subcmdpath" ]; then
+		case "$subcmdname" in
+			help|-h|--help|-help) one-usage "" "$cmdpath" ;;
+			*) EXIT_ERROR 3 "Command '"$subcmdname"' does not exist"
+		esac
+	fi
+
+	. "$subcmdpath"
+	level="$level "
+	set -- "$level" "$subcmdpath" "$@"
+	run "$@"
+}
+
+# This is "unshift" (yeah, I know, great user experience from Bash here ...)
+set -- "" "$0" "$@"
+one-run-subcmd "$@"
