@@ -1,24 +1,119 @@
 #!/bin/bash
 
+set -e
+
+# Variables we recognize
+
+: ONE_CMD_DEBUG
+
+C_BLACK='0;30'
+C_GRAY_D='1;30'
+C_RED='0;31'
+C_RED_L='1;31'
+C_GREEN='0;32'
+C_GREEN_L='1;32'
+C_BROWN='0;33'
+C_YELLOW='1;33'
+C_BLUE='0;34'
+C_BLUE_L='1;34'
+C_PURPLE='0;35'
+C_PURPLE_L='1;35'
+C_CYAN='0;36'
+C_CYAN_L='1;36'
+C_GRAY_L='0;37'
+C_WHITE='1;37'
+
+SAVE_TTY=$(stty -g 2>/dev/null)
+if [[ ! $? ]]; then
+  SAVE_TTY=""
+fi
+
+function handle-INT() {
+	stty $SAVE_TTY >/dev/null
+}
+
+trap handle-INT INT
+
+function LOG() {
+	>&2 echo "$@"
+}
+
 function name-of() {
 	echo "$(basename "$1")"
 }
 
+function set-color() {
+	# This sequence works for bash 3.2 as well
+	# while the widely used one with the "\[" prefix does not.
+	>&2 echo -en "\033[$1m"
+}
+
+function reset-color() {
+	>&2 echo -en "\033[0m"
+}
+
+function color-echon() {
+	set-color "$1"
+	shift
+	>&2 echo -n "$@"
+	reset-color
+}
+
+function green-echon() {
+	color-echon $C_GREEN "$@"
+}
+
+function red-echon() {
+	color-echon $C_RED "$@"
+}
+
+function yellow-echon() {
+	color-echon $C_YELLOW "$@"
+}
+
+function one-debug() {
+	if [ -n "$ONE_CMD_DEBUG" ]; then
+		green-echon '[ONE_DEBUG] '
+		LOG "$@"
+	fi
+}
+
+# one-debug-std-args LEVEL CMD_PATH SUB_CMD
+function one-debug-std-args() {
+	local level="$1"
+	local cmdpath="$2"
+	local subcmdpath="$3"
+	shift
+
+	one-debug "$@"
+	one-debug '  =>' level="'$level'", cmdpath="'$cmdpath'", subcmdname="'$subcmdname'"
+}
+
 function ERROR() {
-	>&2 echo "$@"
+	red-echon ERROR"($BASH_SOURCE)"
+	LOG " $@"
+}
+
+function EXIT() {
+	red-echon EXIT
+	LOG "  $1"
+	exit $1
 }
 
 function EXIT_ERROR() {
 	CODE=$1
 	shift
 	ERROR "$@"
-	ERROR Exiting with status code $CODE
-	exit $CODE
+	EXIT $CODE
 }
 
-function must_have() {
-	if ! which "$1" >& /dev/null; then
-		EXIT_ERROR 2 "ERROR: Command $1 not found"
+function have() {
+	which "$1" >& /dev/null
+}
+
+function must-have() {
+	if ! have "$1"; then
+		EXIT_ERROR 2 "Command $1 not found"
 	fi
 }
 
@@ -27,38 +122,41 @@ function one-subcmd-dir-suffix() {
 }
 
 function one-cmd-dir-of() {
-	cmdpath="$1"
+	local cmdpath="$1"
 	echo "$cmdpath$(one-subcmd-dir-suffix)"
 }
 
 function one-cmd-of-subcmd() {
-	subcmdpath="$1"
-	subcmdname="$(name-of $subcmdpath)"
+	local subcmdpath="$1"
+	local subcmdname="$(name-of $subcmdpath)"
 }
 
 function one-subcmds-of() {
-	cmdpath="$1"
-	cmddir=$(one-cmd-dir-of "$cmdpath")
+	local cmdpath="$1"
+	local cmddir=$(one-cmd-dir-of "$cmdpath")
 
 	ls "$cmddir"/* 2> /dev/null
 }
 
 function one-usage-of-subcmd() {
-	level="$1"
-	cmdpath="$2"
-	subcmdpath="$3"
-	subcmdname=$(name-of "$subcmdpath")
+	local level="$1"
+	local cmdpath="$2"
+	local subcmdpath="$3"
+	local subcmdname=$(name-of "$subcmdpath")
+
+	one-debug Sourcing "'$subcmdpath'"
 	. "$subcmdpath"
-	echo -n "$level" $subcmdname
-	echo -ne "\t"
-	echo $help
+
+	>&2 echo -n "$level" $subcmdname
+	>&2 echo -ne "\t"
+	>&2 echo $help
 }
 
 function one-usage-subcmds() {
-	level="$1"
-	cmdpath="$2"
+	local level="$1"
+	local cmdpath="$2"
 
-	subcmdpaths="$(one-subcmds-of "$cmdpath")"
+	local subcmdpaths="$(one-subcmds-of "$cmdpath")"
 	for subcmdpath in $subcmdpaths; do
 		if [ -f "$subcmdpath" ]; then
 			one-usage-of-subcmd "$level" "$cmdpath" "$subcmdpath"
@@ -66,39 +164,71 @@ function one-usage-subcmds() {
 	done
 }
 
+# one-usage LEVEL CMD_PATH
 function one-usage() {
-	level="$1"
-	cmdpath="$2"
-	cmdname="$(name-of "$cmdpath")"
-	ERROR Usage: $cmdname COMMAND
+	local level="$1"
+	local cmdpath="$2"
+	local cmdname="$(name-of "$cmdpath")"
+
+	green-echon 'Usage: '
+	LOG $cmdname COMMAND
+	green-echon "$help"
+	LOG ''
 	one-usage-subcmds "$@"
+
 	exit 1
 }
 
+# one-run-subcmd LEVEL CMD_PATH SUB_CMD SUB_CMD_ARG*
 function one-run-subcmd() {
+	# We need all three of LEVEL, CMD_PATH, SUB_CMD and by design we always
+	# provide the first two, so if they are alone we do not have a SUB_CMD to run.
+	# In such a case, we print the usage, which is dynamically generated.
   if [ "$#" = 2 ]; then
-		one-usage "$@"
+		one-usage "$1" "$2"
 	fi
 
-	level="$1"
-  cmdpath="$2"
-	subcmdname="$3"
+	local level="$1"
+	local cmdpath="$2"
+	local subcmdname="$3"
 	shift 3
 
-	subcmdpath=$(one-cmd-dir-of $cmdpath)/$subcmdname
+	one-debug-std-args "$level" "$cmdpath" "$subcmdname" "$@"
+
+	subcmdpath="$(one-cmd-dir-of $cmdpath)/$subcmdname"
+
 	if [ ! -f "$subcmdpath" ]; then
+
+		one-debug Not a file: "'$subcmdpath'"
+
 		case "$subcmdname" in
-			help|-h|--help|-help) one-usage "" "$cmdpath" ;;
+			help|-h|--help|-help) one-usage "$level" "$cmdpath" ;;
 			*) EXIT_ERROR 3 "Command '"$subcmdname"' does not exist"
 		esac
 	fi
 
+	one-debug Sourcing "'$subcmdpath'"
 	. "$subcmdpath"
+
 	level="$level "
 	set -- "$level" "$subcmdpath" "$@"
+
+	one-debug Running "$@"
+
+	# Each sub-command defines a run() function
 	run "$@"
 }
 
-# This is "unshift" (yeah, I know, great user experience from Bash here ...)
-set -- "" "$0" "$@"
-one-run-subcmd "$@"
+# Run the command iff not sourced
+if [ "$0" = "$BASH_SOURCE" ]; then
+
+	# We prepend the
+	# - level string, initially empty "" and increasing by an extra ' ' for
+	# 	each sub-command
+	# - name of the top level command (the original script)
+
+	# This is "unshift" in Bash (fanta[-bash-]stic)
+	set -- "" "$0" "$@"
+
+	one-run-subcmd "$@"
+fi

@@ -7,4 +7,5 @@ function run() {
 	ME="$2"
 	shift 2
 	echo CPL: I am $ME with $# params $@
+	echo BASH_SOURCE=$BASH_SOURCE
 }
